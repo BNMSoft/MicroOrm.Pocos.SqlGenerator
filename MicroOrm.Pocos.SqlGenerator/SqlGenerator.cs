@@ -1,9 +1,10 @@
-﻿using MicroOrm.Pocos.SqlGenerator.Attributes;
-using System;
-using System.Collections.Generic;
+﻿using System;
+using System.Text;
 using System.Linq;
 using System.Reflection;
-using System.Text;
+using System.Collections.Generic;
+
+using MicroOrm.Pocos.SqlGenerator.Attributes;
 
 namespace MicroOrm.Pocos.SqlGenerator
 {
@@ -20,7 +21,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// </summary>
         public SqlGenerator()
         {
-            this.LoadEntityMetadata();
+            LoadEntityMetadata();
         }
 
         private void LoadEntityMetadata()
@@ -29,28 +30,29 @@ namespace MicroOrm.Pocos.SqlGenerator
 
             var aliasAttribute = entityType.GetCustomAttribute<StoredAs>();
             var schemeAttribute = entityType.GetCustomAttribute<Scheme>();
-            this.TableName = aliasAttribute != null ? aliasAttribute.Value : entityType.Name;
-            this.Scheme = schemeAttribute != null ? schemeAttribute.Value : "dbo";
+            
+            TableName = aliasAttribute != null ? aliasAttribute.Value : entityType.Name;
+            Scheme = schemeAttribute != null ? schemeAttribute.Value : "dbo";
 
-            //Load all the "primitive" entity properties
-            IEnumerable<PropertyInfo> props = entityType.GetProperties().Where(p => p.PropertyType.IsValueType || p.PropertyType.Name.Equals("String", StringComparison.InvariantCultureIgnoreCase));
+            // Load all the "primitive" entity properties
+            var properties  = entityType.GetProperties().Where(p => p.PropertyType.IsValueType || p.PropertyType.Name.Equals("String", StringComparison.InvariantCultureIgnoreCase)).ToArray();
 
-            //Filter the non stored properties
-            this.BaseProperties = props.Where(p => !p.GetCustomAttributes<NonStored>().Any()).Select(p => new PropertyMetadata(p));
+            BaseProperties = properties.Where(p => !p.GetCustomAttributes<NonStored>().Any()).Select(p => new PropertyMetadata(p));
 
-            //Filter key properties
-            this.KeyProperties = props.Where(p => p.GetCustomAttributes<KeyProperty>().Any()).Select(p => new PropertyMetadata(p));
+            // Filter key properties
+            KeyProperties = properties.Where(p => p.GetCustomAttributes<KeyProperty>().Any()).Select(p => new PropertyMetadata(p));
 
-            //Use identity as key pattern
-            var identityProperty = props.SingleOrDefault(p => p.GetCustomAttributes<KeyProperty>().Any(k => k.Identity));
-            this.IdentityProperty = identityProperty != null ? new PropertyMetadata(identityProperty) : null ;
+            // Use identity as key pattern
+            var identityProperty = properties.SingleOrDefault(p => p.GetCustomAttributes<KeyProperty>().Any(k => k.Identity));
+            IdentityProperty = identityProperty != null ? new PropertyMetadata(identityProperty) : null ;
 
             //Status property (if exists, and if it does, it must be an enumeration)
-            var statusProperty = props.FirstOrDefault(p => p.PropertyType.IsEnum && p.GetCustomAttributes<StatusProperty>().Any());
+            var statusProperty = properties.FirstOrDefault(p => p.PropertyType.IsEnum && p.GetCustomAttributes<StatusProperty>().Any());
 
             if (statusProperty != null)
             {
-                this.StatusProperty = new PropertyMetadata(statusProperty);
+                StatusProperty = new PropertyMetadata(statusProperty);
+
                 var statusPropertyType = statusProperty.PropertyType;
                 var deleteOption = statusPropertyType.GetFields().FirstOrDefault(f => f.GetCustomAttribute<Deleted>() != null);
 
@@ -59,14 +61,14 @@ namespace MicroOrm.Pocos.SqlGenerator
                     var enumValue = Enum.Parse(statusPropertyType, deleteOption.Name);
 
                     if (enumValue != null)
-                        this.LogicalDeleteValue = Convert.ChangeType(enumValue, Enum.GetUnderlyingType(statusPropertyType));
+                    {
+                        LogicalDeleteValue = Convert.ChangeType(enumValue, Enum.GetUnderlyingType(statusPropertyType));
+                    }
                 }
             }
         }
 
         #endregion
-
-        #region Properties
 
         /// <summary>
         /// 
@@ -75,7 +77,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         {
             get
             {
-                return this.IdentityProperty != null;
+                return IdentityProperty != null;
             }
         }
 
@@ -86,7 +88,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         {
             get
             {
-                return this.StatusProperty != null;
+                return StatusProperty != null;
             }
         }
 
@@ -125,38 +127,35 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// </summary>
         public object LogicalDeleteValue { get; private set; }
 
-        #endregion
-
-        #region Query generators
-
         /// <summary>
         ///  
         /// </summary>
         /// <returns></returns>
         public virtual string GetInsert()
         {
-            //Enumerate the entity properties
-            //Identity property (if exists) has to be ignored
-            IEnumerable<PropertyMetadata> properties = (this.IsIdentity ?
-                                                        this.BaseProperties.Where(p => !p.Name.Equals(this.IdentityProperty.Name, StringComparison.InvariantCultureIgnoreCase)) :
-                                                        this.BaseProperties).ToList();
+            // Enumerate the entity properties
+            // Identity property (if exists) has to be ignored
+            IEnumerable<PropertyMetadata> properties = (IsIdentity ?
+                                                        BaseProperties.Where(p => !p.Name.Equals(IdentityProperty.Name, StringComparison.InvariantCultureIgnoreCase)) :
+                                                        BaseProperties).ToList();
 
-            string columNames = string.Join(", ", properties.Select(p => string.Format("[{0}].[{1}]", this.TableName, p.ColumnName)));
-            string values = string.Join(", ", properties.Select(p => string.Format("@{0}", p.Name)));
+            var columNames = string.Join(", ", properties.Select(p => string.Format("[{0}].[{1}]", TableName, p.ColumnName)));
+            var values = string.Join(", ", properties.Select(p => string.Format("@{0}", p.Name)));
 
             var sqlBuilder = new StringBuilder();
-            sqlBuilder.AppendFormat("INSERT INTO [{0}].[{1}] {2} {3} ",
-                                    this.Scheme,
-                                    this.TableName,
+            sqlBuilder.AppendFormat(SqlStrings.Insert,
+                                    Scheme,
+                                    TableName,
                                     string.IsNullOrEmpty(columNames) ? string.Empty : string.Format("({0})", columNames),
-                                    string.IsNullOrEmpty(values) ? string.Empty : string.Format(" VALUES ({0})", values));
+                                    string.IsNullOrEmpty(values) ? string.Empty : string.Format("values ({0})", values));
 
-            //If the entity has an identity key, we create a new variable into the query in order to retrieve the generated id
-            if (this.IsIdentity)
+            // If the entity has an identity key, we create a new variable into the query in order to retrieve the generated id
+            if (IsIdentity)
             {
-                sqlBuilder.AppendLine("DECLARE @NEWID NUMERIC(38, 0)");
-                sqlBuilder.AppendLine("SET	@NEWID = SCOPE_IDENTITY()");
-                sqlBuilder.AppendLine("SELECT @NEWID");
+                sqlBuilder.AppendLine("");
+                sqlBuilder.AppendLine("declare @newId numeric(38, 0)");
+                sqlBuilder.AppendLine("set @newId = scope_identity()");
+                sqlBuilder.AppendLine("select @newId");
             }
 
             return sqlBuilder.ToString();
@@ -168,14 +167,15 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// <returns></returns>
         public virtual string GetUpdate()
         {
-            var properties = this.BaseProperties.Where(p => !this.KeyProperties.Any(k => k.Name.Equals(p.Name, StringComparison.InvariantCultureIgnoreCase)));
+            var properties = BaseProperties.Where(p => !KeyProperties.Any(k => k.Name.Equals(p.Name, StringComparison.InvariantCultureIgnoreCase)));
 
             var sqlBuilder = new StringBuilder();
-            sqlBuilder.AppendFormat("UPDATE [{0}].[{1}] SET {2} WHERE {3}",
-                                    this.Scheme,
-                                    this.TableName,
-                                    string.Join(", ", properties.Select(p => string.Format("[{0}].[{1}] = @{2}", this.TableName, p.ColumnName, p.Name))),
-                                    string.Join(" AND ", this.KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", this.TableName, p.ColumnName, p.Name))));
+
+            sqlBuilder.AppendFormat(SqlStrings.Update,
+                                    Scheme,
+                                    TableName,
+                                    string.Join(", ", properties.Select(p => string.Format("[{0}].[{1}] = @{2}", TableName, p.ColumnName, p.Name))),
+                                    string.Join(" and ", KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", TableName, p.ColumnName, p.Name))));
             
             return sqlBuilder.ToString();
         }
@@ -186,7 +186,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// <returns></returns>
         public virtual string GetSelectAll()
         {
-            return this.GetSelect(new { });
+            return GetSelect(new { });
         }
 
         /// <summary>
@@ -196,41 +196,49 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// <returns></returns>
         public virtual string GetSelect(object filters)
         {
-            //Projection function
+            // Projection function
             Func<PropertyMetadata, string> projectionFunction = (p) =>
             {
                 if (!string.IsNullOrEmpty(p.Alias))
-                    return string.Format("[{0}].[{1}] AS [{2}]", this.TableName, p.ColumnName, p.Name);
+                {
+                    return string.Format("[{0}].[{1}] as [{2}]", TableName, p.ColumnName, p.Name);    
+                }
 
-                return string.Format("[{0}].[{1}]", this.TableName, p.ColumnName);
+                return string.Format("[{0}].[{1}]", TableName, p.ColumnName);
             };
 
             var sqlBuilder = new StringBuilder();
-            sqlBuilder.AppendFormat("SELECT {0} FROM [{1}].[{2}] WITH (NOLOCK)",
-                                    string.Join(", ", this.BaseProperties.Select(projectionFunction)),
-                                    this.Scheme,
-                                    this.TableName);
+            sqlBuilder.AppendFormat(SqlStrings.Select,
+                                    string.Join(", ", BaseProperties.Select(projectionFunction)),
+                                    Scheme,
+                                    TableName);
 
-            //Properties of the dynamic filters object
-            var filterProperties = filters.GetType().GetProperties().Select(p => p.Name);
-            bool containsFilter = (filterProperties != null && filterProperties.Any());
+            // Properties of the dynamic filters object
+            var filterProperties = (filters != null) ? filters.GetType().GetProperties().Select(p => p.Name).ToArray() : new List<string>().ToArray();
+            var containsFilter = filterProperties.Any();
 
             if (containsFilter)
-                sqlBuilder.AppendFormat(" WHERE {0} ", this.ToWhere(filterProperties));
+            {
+                sqlBuilder.AppendFormat(" where {0} ", ToWhere(filterProperties));    
+            }
 
-            //Evaluates if this repository implements logical delete
-            if (this.LogicalDelete)
+            // Evaluates if this repository implements logical delete
+            if (LogicalDelete)
             {
                 if (containsFilter)
-                    sqlBuilder.AppendFormat(" AND [{0}].[{1}] != {2}",
-                                            this.TableName,
-                                            this.StatusProperty.Name,
-                                            this.LogicalDeleteValue);
+                {
+                    sqlBuilder.AppendFormat(" and [{0}].[{1}] != {2}",
+                        TableName,
+                        StatusProperty.Name,
+                        LogicalDeleteValue);
+                }
                 else
-                    sqlBuilder.AppendFormat(" WHERE [{0}].[{1}] != {2}",
-                                            this.TableName,
-                                            this.StatusProperty.Name,
-                                            this.LogicalDeleteValue);
+                {
+                    sqlBuilder.AppendFormat(" where [{0}].[{1}] != {2}",
+                        TableName,
+                        StatusProperty.Name,
+                        LogicalDeleteValue);
+                }
             }
 
             return sqlBuilder.ToString();
@@ -244,28 +252,27 @@ namespace MicroOrm.Pocos.SqlGenerator
         {
             var sqlBuilder = new StringBuilder();
 
-            if (!this.LogicalDelete)
+            if (!LogicalDelete)
             {
-                sqlBuilder.AppendFormat("DELETE FROM [{0}].[{1}] WHERE {2}",
-                                        this.Scheme,
-                                        this.TableName,
-                                        string.Join(" AND ", this.KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", this.TableName, p.ColumnName, p.Name))));
+                sqlBuilder.AppendFormat(SqlStrings.Delete,
+                    Scheme,
+                    TableName,
+                    string.Join(" and ",
+                        KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", TableName, p.ColumnName, p.Name))));
 
             }
             else
-                sqlBuilder.AppendFormat("UPDATE [{0}].[{1}] SET {2} WHERE {3}",
-                                    this.Scheme,
-                                    this.TableName,
-                                    string.Format("[{0}].[{1}] = {2}", this.TableName, this.StatusProperty.ColumnName, this.LogicalDeleteValue),
-                                    string.Join(" AND ", this.KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", this.TableName, p.ColumnName, p.Name))));
-
+            {
+                sqlBuilder.AppendFormat(SqlStrings.Update,
+                    Scheme,
+                    TableName,
+                    string.Format("[{0}].[{1}] = {2}", TableName, StatusProperty.ColumnName, LogicalDeleteValue),
+                    string.Join(" and ",
+                        KeyProperties.Select(p => string.Format("[{0}].[{1}] = @{2}", TableName, p.ColumnName, p.Name))));
+            }
 
             return sqlBuilder.ToString();
         }
-
-        #endregion
-
-        #region Private utility
 
         /// <summary>
         /// 
@@ -274,18 +281,21 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// <returns></returns>
         private string ToWhere(IEnumerable<string> properties)
         {
-            return string.Join(" AND ", properties.Select(p => {
+            return string.Join(" and ", properties.Select(p => {
+                var propertyMetadata = BaseProperties.FirstOrDefault(pm => pm.Name.Equals(p, StringComparison.InvariantCultureIgnoreCase));
 
-                var propertyMetadata = this.BaseProperties.FirstOrDefault(pm => pm.Name.Equals(p, StringComparison.InvariantCultureIgnoreCase));
+                if (propertyMetadata != null)
+                {
+                    return string.Format("[{0}].[{1}] = @{2}", TableName, propertyMetadata.ColumnName, propertyMetadata.Name);
+                }
 
-                if(propertyMetadata != null)
-                    return string.Format("[{0}].[{1}] = @{2}", this.TableName, propertyMetadata.ColumnName, propertyMetadata.Name);
+                if (p == null)
+                {
+                    return string.Format("[{0}].[{1}] is @{2}", TableName, p, p);
+                }
 
-                return string.Format("[{0}].[{1}] = @{2}", this.TableName, p, p);
-
+                return string.Format("[{0}].[{1}] = @{2}", TableName, p, p);
             }));
         }
-
-        #endregion
     }
 }

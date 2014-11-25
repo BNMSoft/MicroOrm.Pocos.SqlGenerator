@@ -10,8 +10,6 @@ namespace MicroOrm.Pocos.SqlGenerator
     public interface ISqlGenerator<TEntity> where TEntity : new()
     {
 
-        #region Properties
-
         /// <summary>
         /// 
         /// </summary>
@@ -57,10 +55,6 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// </summary>
         bool LogicalDelete { get; }
 
-        #endregion
-
-        #region Functions
-
         /// <summary>
         /// 
         /// </summary>
@@ -91,7 +85,5 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// </summary>
         /// <returns></returns>
         string GetDelete();
-
-        #endregion
     }
 }

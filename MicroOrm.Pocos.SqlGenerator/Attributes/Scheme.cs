@@ -18,7 +18,7 @@ namespace MicroOrm.Pocos.SqlGenerator.Attributes
         /// <param name="value"></param>
         public Scheme(string value)
         {
-            this.Value = value;
+            Value = value;
         }
     }
 }

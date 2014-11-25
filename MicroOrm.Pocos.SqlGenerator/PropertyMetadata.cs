@@ -1,5 +1,6 @@
-﻿using MicroOrm.Pocos.SqlGenerator.Attributes;
-using System.Reflection;
+﻿using System.Reflection;
+
+using MicroOrm.Pocos.SqlGenerator.Attributes;
 
 namespace MicroOrm.Pocos.SqlGenerator
 {
@@ -22,7 +23,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         {
             get
             {
-                return string.IsNullOrEmpty(this.Alias) ? this.PropertyInfo.Name : this.Alias;
+                return string.IsNullOrEmpty(Alias) ? PropertyInfo.Name : Alias;
             }
         }
 
@@ -33,7 +34,7 @@ namespace MicroOrm.Pocos.SqlGenerator
         {
             get 
             {
-                return this.PropertyInfo.Name;
+                return PropertyInfo.Name;
             }
         }
 
@@ -43,10 +44,11 @@ namespace MicroOrm.Pocos.SqlGenerator
         /// <param name="propertyInfo"></param>
         public PropertyMetadata(PropertyInfo propertyInfo)
         {
-            this.PropertyInfo = propertyInfo;
+            PropertyInfo = propertyInfo;
 
-            var alias = this.PropertyInfo.GetCustomAttribute<StoredAs>();
-            this.Alias = alias != null ? alias.Value : string.Empty;
+            var alias = PropertyInfo.GetCustomAttribute<StoredAs>();
+
+            Alias = alias != null ? alias.Value : string.Empty;
         }
     }
 }
